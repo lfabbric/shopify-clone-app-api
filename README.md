@@ -1,1 +1,1 @@
-# shopify-base-clone
+# shopify-clone-app-api
