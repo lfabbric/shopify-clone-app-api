@@ -137,3 +137,8 @@ dmypy.json
 # VisualStudioCode Patch
 .history
 .ionide
+
+.devcontainer/*
+!.devcontainer/README.md
+!.devcontainer/recommended-devcontainer.json
+!.devcontainer/recommended-Dockerfile
