@@ -1,5 +1,4 @@
 import uuid
-import os
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, \
                                         PermissionsMixin
@@ -7,12 +6,15 @@ from django.conf import settings
 from django.utils.translation import gettext as _
 
 
-def recipe_image_file_path(instance, filename):
-    """Generate file path for upload image"""
+def store_image_file_path(instance, filename):
+    """Generate file path for an uploaded image"""
     ext = filename.split('.')[-1]
     filename = f'{uuid.uuid4()}.{ext}'
 
-    return os.path.join('uploads/recipe/', filename)
+    return "uploads/{store}/{file}".format(
+        store=instance.uuid,
+        file=filename
+    )
 
 
 class UserManager(BaseUserManager):
@@ -46,3 +48,19 @@ class User(AbstractBaseUser, PermissionsMixin):
     objects = UserManager()
 
     USERNAME_FIELD = 'email'
+
+
+class Store(models.Model):
+    title = models.CharField(_("name"), max_length=35)
+    is_active = models.BooleanField(default=False)
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False)
+    logo = models.ImageField(blank=True, upload_to=store_image_file_path)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE
+    )
+
+    def __str__(self):
+        return '{}'.format(self.title)
