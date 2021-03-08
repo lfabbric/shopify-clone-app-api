@@ -26,8 +26,12 @@ def sample_user(email='tmp_user@cinolabs.com', password='testpass'):
     return get_user_model().objects.create_user(email, password)
 
 
-def sample_store(user, title='Main Store'):
-    return Store.objects.create(user=user, title=title)
+def sample_store(user, title='Main Store', slug='main_store'):
+    return Store.objects.create(
+        user=user,
+        title=title,
+        slug=slug
+    )
 
 
 def detail_url(id):
@@ -48,9 +52,9 @@ class PublicUserApiTests(TestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.data, serializer.data)
 
-    def test_get_store_detail(self):
+    def test_get_store_detail_by_slug(self):
         store = sample_store(sample_user())
-        res = self.client.get(detail_url(store.id))
+        res = self.client.get(detail_url(store.slug))
 
         self.assertEqual(res.status_code, status.HTTP_200_OK)
 
@@ -71,21 +75,20 @@ class PrivateUserApiTests(TestCase):
     def test_create_basic_store(self):
         """Test creating a user that already exists"""
         payload = {
-            'title': 'Test store name'
+            'title': 'Test store name',
+            'slug': 'test_store_name'
         }
 
         self.client.post(STORE_URL, payload)
-
         exists = Store.objects.filter(
             user=self.user,
             title=payload['title']
         ).exists()
-
         self.assertTrue(exists)
 
     def test_edit_another_users_store(self):
         store = sample_store(sample_user())
-        url = detail_url(store.id)
+        url = detail_url(store.slug)
         payload = {
             'title': 'Revised Title'
         }
@@ -111,7 +114,7 @@ class StoreImageUploadTests(TestCase):
 
     def test_upload_image_to_store(self):
         """Test upload an image"""
-        url = image_upload_url(self.store.id)
+        url = image_upload_url(self.store.slug)
         with tempfile.NamedTemporaryFile(suffix='.jpg') as ntf:
             img = Image.new('RGB', (10, 10))
             img.save(ntf, format='JPEG')
@@ -125,7 +128,7 @@ class StoreImageUploadTests(TestCase):
 
     def test_upload_image_bad_request(self):
         """Test uploading invalid image"""
-        url = image_upload_url(self.store.id)
+        url = image_upload_url(self.store.slug)
         res = self.client.post(url, {'logo': 'notimage'}, format='multipart')
 
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)

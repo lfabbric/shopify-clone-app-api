@@ -4,6 +4,9 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, \
                                         PermissionsMixin
 from django.conf import settings
 from django.utils.translation import gettext as _
+from django.utils.text import slugify
+
+from taggit.managers import TaggableManager
 
 
 def store_image_file_path(instance, filename):
@@ -51,16 +54,80 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 
 class Store(models.Model):
-    title = models.CharField(_("name"), max_length=35)
+    title = models.CharField(_("title"), max_length=35)
+    slug = models.SlugField(max_length=40, unique=True, blank=False)
     is_active = models.BooleanField(default=False)
     uuid = models.UUIDField(default=uuid.uuid4, editable=False)
     logo = models.ImageField(blank=True, upload_to=store_image_file_path)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE
     )
 
+    def save(self, *args, **kwargs):
+        self.slug = slugify(self.title)
+        super(Store, self).save(*args, **kwargs)
+
     def __str__(self):
         return '{}'.format(self.title)
+
+
+class Product(models.Model):
+
+    MANUAL = "MANUAL"
+    AUTOMATIC = "AUTOMATIC"
+    FULFILLMENT_CHOICES = (
+        (MANUAL, _("Manual")),
+        (AUTOMATIC, _("Automatic")),
+    )
+
+    title = models.CharField(_("title"), max_length=35)
+    slug = models.SlugField(max_length=40, blank=False)
+    body = models.TextField(_('body'))
+    price = models.DecimalField(decimal_places=2, max_digits=8)
+    taxable = models.BooleanField(default=True)
+    tags = TaggableManager()
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False)
+    purchased = models.PositiveIntegerField(default=0)
+    stock = models.PositiveIntegerField()
+    length = models.FloatField(_("Length"), default=.5)
+    fulfillment = models.CharField(
+        _('Fulfillment Service'),
+        max_length=9,
+        choices=FULFILLMENT_CHOICES,
+        default=MANUAL
+    )
+
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.CASCADE
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE
+    )
+    # Need to add when ProductType created
+    # type = models.ForeignKey(
+    #     ProductType,
+    #     null=True,
+    #     on_delete=models.SET_NULL
+    # )
+
+    published = models.BooleanField(default=False)
+    date_available = models.DateTimeField(
+        _("Available"),
+        auto_now_add=True,
+        blank=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('slug', 'store',)
+
+    def save(self, *args, **kwargs):
+        self.slug = slugify(self.title)
+        super(Product, self).save(*args, **kwargs)
