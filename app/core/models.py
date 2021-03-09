@@ -75,6 +75,21 @@ class Store(models.Model):
         return '{}'.format(self.title)
 
 
+class ProductType(models.Model):
+    name = models.CharField(_("name"), max_length=35)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE
+    )
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.CASCADE
+    )
+
+    def __str__(self):
+        return self.title
+
+
 class Product(models.Model):
 
     MANUAL = "MANUAL"
@@ -109,12 +124,11 @@ class Product(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE
     )
-    # Need to add when ProductType created
-    # type = models.ForeignKey(
-    #     ProductType,
-    #     null=True,
-    #     on_delete=models.SET_NULL
-    # )
+    type = models.ForeignKey(
+        ProductType,
+        null=True,
+        on_delete=models.SET_NULL
+    )
 
     published = models.BooleanField(default=False)
     date_available = models.DateTimeField(

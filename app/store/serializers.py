@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from core.models import Store, Product
+from core.models import Store, Product, ProductType
 
 
 class StringListField(serializers.ListField):
@@ -32,22 +32,25 @@ class StoreImageSerializer(serializers.ModelSerializer):
         read_only_fields = ('id',)
 
 
+class ProductTypeSerializer(serializers.ModelSerializer):
+    """Serializer for uploading the logo to the store"""
+
+    class Meta:
+        model = ProductType
+        fields = ('id', 'name',)
+        read_only_fields = ('id',)
+
+
 class ProductSerializer(serializers.ModelSerializer):
     store = StoreSerializer(read_only=True)
+    type = ProductTypeSerializer()
     tags = StringListField()
 
     class Meta:
         model = Product
         fields = (
             'id', 'title', 'body', 'store', 'fulfillment', 'taxable',
-            'price', 'stock', 'length', 'purchased', 'tags'
+            'price', 'stock', 'length', 'purchased', 'tags', 'type'
         )
         read_only_fields = ('id',)
 
-    # def create(self, validated_data):
-    #     tags = validated_data.pop('tags')
-    #     instance = super(MyModelSerializer, self).create(validated_data)
-    #     instance.tags.set(*tags)
-    #     return instance
-
-    # def update(self, instance, validated_data):

@@ -5,7 +5,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from core.models import Store, Product
+from core.models import Store, Product, ProductType
 from store import serializers
 
 
@@ -37,7 +37,8 @@ def sample_product(user, store, **params):
     defaults = {
         'title': 'Sample Product',
         'price': 5.00,
-        'stock': 3
+        'stock': 3,
+        'published': True
     }
     defaults.update(params)
 
@@ -53,7 +54,7 @@ class PublicProductApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-    def test_list_all_products_no_store(self):
+    def test_list_all_products(self):
         owner = sample_user()
         owner2 = sample_user(email='altnernate_user@cinolabs.com')
         store1 = sample_store(owner)
@@ -68,3 +69,49 @@ class PublicProductApiTests(TestCase):
 
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertIn(serializer.data, res.data)
+
+    def test_list_products_by_tags(self):
+        owner = sample_user()
+        store1 = sample_store(owner)
+        product1 = sample_product(owner, store1, title='Product A')
+        product1.tags.add('fabric', 'disney')
+        product2 = sample_product(owner, store1, title='Product B')
+        product2.tags.add('fabric')
+        product3 = sample_product(owner, store1, title='Product C')
+        product3.tags.add('target')
+
+        url = product_url(store1.slug)
+        res = self.client.get(
+            url,
+            {'tags': 'fabric, disney'}
+        )
+
+        serializer = serializers.ProductSerializer(product1)
+        serializer2 = serializers.ProductSerializer(product3)
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIn(serializer.data, res.data)
+        self.assertNotIn(serializer2.data, res.data)
+
+    def test_get_products_with_type(self):
+        owner = sample_user()
+        store = sample_store(owner)
+        product_type = ProductType.objects.create(
+            name='Quilting Cotton',
+            store=store,
+            user=owner
+        )
+        product1 = sample_product(
+            owner,
+            store,
+            title='Product A',
+            type=product_type
+        )
+
+        url = detail_url(store.slug, product1.id)
+        res = self.client.get(url)
+
+        serializer = serializers.ProductSerializer(product1)
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data, serializer.data)
