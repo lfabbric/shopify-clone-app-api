@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from core.models import Store, Product, ProductType
+from core.models import Store, Product, ProductType, Collection
 
 
 class StringListField(serializers.ListField):
@@ -54,3 +54,11 @@ class ProductSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('id',)
 
+
+class CollectionSerializer(serializers.ModelSerializer):
+    """Serializer for uploading the logo to the store"""
+
+    class Meta:
+        model = Collection
+        fields = ('id', 'title', 'type', 'image')
+        read_only_fields = ('id',)

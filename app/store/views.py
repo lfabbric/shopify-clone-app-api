@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import viewsets, status, mixins, permissions
 from rest_framework.authentication import TokenAuthentication
 
-from core.models import Store, Product
+from core.models import Store, Product, Collection
 from core import utils
 from core.permissions import IsOwnerOrReadOnly, IsOwnerOrStaff
 from store import serializers
@@ -99,3 +99,20 @@ class ProductViewSet(PublicStoreReadOnlyViewSet):
 class ProductAdminViewSet(BaseStoreModelViewSet):
     serializer_class = serializers.ProductSerializer
     queryset = Product.objects.all()
+
+
+class CollectionViewSet(PublicStoreReadOnlyViewSet):
+    serializer_class = serializers.CollectionSerializer
+    queryset = Collection.objects.all()
+
+    @action(methods=['GET'], detail=False, url_path='collection-product-list')
+    def product_list(self, request, store, pk):
+        collection = Collection.objects.get(pk=pk, store__slug=store)
+        products = collection.get_products()
+
+        serializer = serializers.ProductSerializer(products, many=True)
+
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK
+        )

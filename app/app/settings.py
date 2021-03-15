@@ -38,9 +38,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django_extensions',
+    'taggit',
     'rest_framework',
     'rest_framework.authtoken',
-    'taggit',
     'core',
     'user',
     'store',
@@ -134,4 +134,4 @@ STATIC_ROOT = '/vol/web/static'
 
 AUTH_USER_MODEL = 'core.User'
 
-TAGGIT_CASE_INSENSITIVE = True
+# TAGGIT_CASE_INSENSITIVE = True

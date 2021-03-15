@@ -5,8 +5,12 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, \
 from django.conf import settings
 from django.utils.translation import gettext as _
 from django.utils.text import slugify
+from django.db.models import Q
+from django.utils import timezone
 
 from taggit.managers import TaggableManager
+import operator
+from functools import reduce
 
 
 def store_image_file_path(instance, filename):
@@ -15,6 +19,17 @@ def store_image_file_path(instance, filename):
     filename = f'{uuid.uuid4()}.{ext}'
 
     return "uploads/{store}/{file}".format(
+        store=instance.uuid,
+        file=filename
+    )
+
+
+def collection_image_file_path(instance, filename):
+    """Generate file path for an uploaded image"""
+    ext = filename.split('.')[-1]
+    filename = f'{uuid.uuid4()}.{ext}'
+
+    return "uploads/{store}/collection/{file}".format(
         store=instance.uuid,
         file=filename
     )
@@ -91,7 +106,6 @@ class ProductType(models.Model):
 
 
 class Product(models.Model):
-
     MANUAL = "MANUAL"
     AUTOMATIC = "AUTOMATIC"
     FULFILLMENT_CHOICES = (
@@ -145,3 +159,193 @@ class Product(models.Model):
     def save(self, *args, **kwargs):
         self.slug = slugify(self.title)
         super(Product, self).save(*args, **kwargs)
+
+
+class Collection(models.Model):
+    ALL = Q.AND
+    ANY = Q.OR
+    CONDITION_MATCH_CHOICES = (
+        (ALL, _("All conditions")),
+        (ANY, _("Any conditions")),
+    )
+
+    title = models.CharField(_("title"), max_length=35)
+    slug = models.SlugField(max_length=100, blank=False)
+    body = models.TextField(_('body'))
+    image = models.ImageField(blank=True, upload_to=collection_image_file_path)
+    type = models.CharField(
+        _('Collection Type'),
+        max_length=9,
+        choices=CONDITION_MATCH_CHOICES,
+        default=ALL
+    )
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.CASCADE
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE
+    )
+
+    def operator_type(self):
+        if self.type == self.ANY:
+            return operator.or_
+        return operator.and_
+
+    def save(self, *args, **kwargs):
+        self.slug = slugify(self.title)
+        super(Collection, self).save(*args, **kwargs)
+
+    def get_products(self):
+        conditions = Condition.objects.prefetch_related('collection').filter(
+            collection__id=self.id
+        ).order_by('field_reference')
+
+        products = Product.objects.all().filter(
+            store__slug=self.store.slug,
+            published=True,
+            date_available__lte=timezone.now()
+        )
+        prev = None
+        nquery = []
+        nquery2 = []
+        for c in conditions:
+            choice = next(
+                item for item in Condition._CHOICES
+                if item["key"] == c.field_reference
+            )
+            if choice:
+                dynamic_filter = {
+                    f"{choice['field']}"
+                    f"{choice['choices'][c.filter_type]['match']}": c.field_val
+                }
+                if prev and prev != c.field_reference:
+                    nquery2.append(
+                        (reduce(operator.or_, nquery))
+                    )
+                    nquery = []
+                if choice['choices'][c.filter_type]['negation']:
+                    q = ~Q(**dynamic_filter)
+                else:
+                    q = Q(**dynamic_filter)
+                nquery.append(q)
+            prev = c.field_reference
+
+        nquery2.append(
+            (reduce(operator.or_, nquery))
+        )
+
+        query = (reduce(self.operator_type(), nquery2))
+        products = products.filter(query)
+        products = products.distinct()
+
+        return products
+
+    def __str__(self):
+        return '{}'.format(self.title)
+
+
+class Condition(models.Model):
+    EQUAL = "EQUAL"
+    NOTEQUAL = "NOTEQUAL"
+    GTE = "GREATERTHANEQUAL"
+    LTE = "LESSTHANEQUAL"
+    STARTSWITH = "STARTSWITH"
+    ENDSWITH = "ENDSWITH"
+    CONTAINS = "CONTAINS"
+    NOTCONTAIN = "NOTCONTAIN"
+
+    FILTER_CHOICES = (
+        (EQUAL, _("Is equal to")),
+        (NOTEQUAL, _("Not equal to")),
+        (GTE, _("Greater than")),
+        (LTE, _("Less than")),
+        (STARTSWITH, _("Starts with")),
+        (ENDSWITH, _("Ends with")),
+        (CONTAINS, _("Contains")),
+        (NOTCONTAIN, _("Does not contain")),
+    )
+
+    PRODUCT_TYPE = "TYPE"
+    PRODUCT_TITLE = "TITLE"
+    PRODUCT_TAG = "TAG"
+    PRODUCT_STOCK = "STOCK"
+    PRODUCT_PRICE = "PRICE"
+
+    _default_choices = {
+        EQUAL: {'match': '__iexact', 'negation': False},
+        NOTEQUAL: {'match': '__iexact', 'negation': True},
+        STARTSWITH: {'match': '__istartswith', 'negation': False},
+        ENDSWITH: {'match': '__iendswith', 'negation': False},
+        CONTAINS: {'match': '__contains', 'negation': False},
+        NOTCONTAIN: {'match': '__contains', 'negation': True},
+    }
+
+    _numeric_choices = {
+        EQUAL: {'match': '__iexact', 'negation': False},
+        NOTEQUAL: {'match': '__iexact', 'negation': True},
+        GTE: {'match': '__gte', 'negation': False},
+        LTE: {'match': '__lte', 'negation': False},
+    }
+
+    _CHOICES = [
+        {
+            'key': PRODUCT_TYPE,
+            'label': _("Product Type"),
+            'choices': _default_choices,
+            'field': 'type__name',
+        },
+        {
+            'key': PRODUCT_TITLE,
+            'label': _("Product Title"),
+            'choices': _default_choices,
+            'field': PRODUCT_TITLE.lower(),
+        },
+        {
+            'key': PRODUCT_TAG,
+            'label': _("Product Tag"),
+            'choices': _default_choices,
+            'field': 'tags__name',
+        },
+        {
+            'key': PRODUCT_STOCK,
+            'label': _("Product Stock"),
+            'choices': _numeric_choices,
+            'field': PRODUCT_STOCK.lower(),
+        },
+        {
+            'key': PRODUCT_PRICE,
+            'label': _("Product Price"),
+            'choices': _numeric_choices,
+            'field': PRODUCT_PRICE.lower(),
+        },
+    ]
+    FIELD_REF_CHOICES = tuple([
+        (v['key'], v['label']) for i, v in enumerate(_CHOICES)
+    ])
+
+    field_reference = models.CharField(
+        _('Field Reference'),
+        max_length=25,
+        choices=FIELD_REF_CHOICES,
+        default=PRODUCT_TYPE
+    )
+    filter_type = models.CharField(
+        _('Filter Type'),
+        max_length=25,
+        choices=FILTER_CHOICES,
+        default=EQUAL
+    )
+    field_val = models.CharField(_("Condition Value"), max_length=35)
+    collection = models.ForeignKey(
+        Collection,
+        on_delete=models.CASCADE
+    )
+
+    def __str__(self):
+        return '{} {} {}'.format(
+            dict(self.FIELD_REF_CHOICES)[self.field_reference],
+            dict(self.FILTER_CHOICES)[self.filter_type],
+            self.field_val
+        )
