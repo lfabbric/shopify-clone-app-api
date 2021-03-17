@@ -7,6 +7,7 @@ from django.utils.translation import gettext as _
 from django.utils.text import slugify
 from django.db.models import Q
 from django.utils import timezone
+from django.core.validators import MaxValueValidator, MinValueValidator
 
 from taggit.managers import TaggableManager
 import operator
@@ -30,7 +31,19 @@ def collection_image_file_path(instance, filename):
     filename = f'{uuid.uuid4()}.{ext}'
 
     return "uploads/{store}/collection/{file}".format(
-        store=instance.uuid,
+        store=instance.store.uuid,
+        file=filename
+    )
+
+
+def upload_path_handler(instance, filename):
+    """Generate file path for an uploaded image"""
+    ext = filename.split('.')[-1]
+    filename = f'{uuid.uuid4()}.{ext}'
+
+    return "uploads/{store}/product/{product}/{file}".format(
+        store=instance.product.store.uuid,
+        product=instance.product.slug,
         file=filename
     )
 
@@ -159,6 +172,76 @@ class Product(models.Model):
     def save(self, *args, **kwargs):
         self.slug = slugify(self.title)
         super(Product, self).save(*args, **kwargs)
+
+    def get_images(self):
+        images = ProductImage.objects.filter(
+            product__id=self.id
+        )
+        return images
+
+    def get_attachments(self):
+        attachments = ProductAttachment.objects.filter(
+            product__id=self.id
+        )
+        return attachments
+
+    def get_reviews(self, is_active=True):
+        reviews = ProductReview.objects.filter(
+            product__id=self.id
+        )
+        return reviews
+
+
+class ProductImage(models.Model):
+    title = models.CharField(_("Title"), max_length=32, blank=False)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    image = models.ImageField(_("Image"), upload_to=upload_path_handler)
+    is_primary = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return '{}_{}({})'.format(
+            self.product.title,
+            self.title,
+            self.is_primary
+        )
+
+
+class ProductAttachment(models.Model):
+    title = models.CharField(_("Title"), max_length=32, blank=False)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    file = models.FileField(_("File"), upload_to=upload_path_handler)
+    is_primary = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return '{}: {}'.format(self.product.title, self.title)
+
+
+class ProductReview(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE
+    )
+    rating = models.PositiveIntegerField(
+        _('rating'),
+        default=1,
+        validators=[
+            MaxValueValidator(5),
+            MinValueValidator(1)
+        ]
+    )
+    title = models.CharField(_("Title"), max_length=32, blank=False)
+    review = models.TextField(_('Description'), blank=False)
+    was_helpful = models.IntegerField(_('Helpful'))
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return '{} - {}'.format(self.product.title, self.title)
 
 
 class Collection(models.Model):

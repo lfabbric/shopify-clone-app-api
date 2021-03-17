@@ -3,7 +3,8 @@ from rest_framework.response import Response
 from rest_framework import viewsets, status, mixins, permissions
 from rest_framework.authentication import TokenAuthentication
 
-from core.models import Store, Product, Collection
+from core.models import Store, Product, Collection, \
+                        ProductImage, ProductAttachment
 from core import utils
 from core.permissions import IsOwnerOrReadOnly, IsOwnerOrStaff
 from store import serializers
@@ -116,3 +117,31 @@ class CollectionViewSet(PublicStoreReadOnlyViewSet):
             serializer.data,
             status=status.HTTP_200_OK
         )
+
+
+class ProductImageViewSet(viewsets.ModelViewSet):
+    authentication_classes = (TokenAuthentication,)
+    permission_classes = (permissions.IsAuthenticated, IsOwnerOrStaff,)
+    serializer_class = serializers.ProductImageSerializer
+    queryset = ProductImage.objects.all()
+
+    def get_queryset(self):
+        """Return objects for the base store"""
+        queryset = self.queryset
+        store_slug = self.kwargs['slug']
+
+        return queryset.filter(product__store__slug=store_slug)
+
+
+class ProductAttachmentViewSet(viewsets.ModelViewSet):
+    authentication_classes = (TokenAuthentication,)
+    permission_classes = (permissions.IsAuthenticated, IsOwnerOrStaff,)
+    serializer_class = serializers.ProductAttachmentSerializer
+    queryset = ProductAttachment.objects.all()
+
+    def get_queryset(self):
+        """Return objects for the base store"""
+        queryset = self.queryset
+        store_slug = self.kwargs['slug']
+
+        return queryset.filter(product__store__slug=store_slug)
