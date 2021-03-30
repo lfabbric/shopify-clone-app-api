@@ -1,17 +1,25 @@
 import uuid
+import operator
+
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, \
                                         PermissionsMixin
 from django.conf import settings
 from django.utils.translation import gettext as _
 from django.utils.text import slugify
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.utils import timezone
 from django.core.validators import MaxValueValidator, MinValueValidator
 
+from phonenumber_field.modelfields import PhoneNumberField
 from taggit.managers import TaggableManager
-import operator
 from functools import reduce
+from decimal import Decimal, ROUND_HALF_UP
+
+
+def return_date_time(days=10):
+    now = timezone.now()
+    return now + timezone.timedelta(days=days)
 
 
 def store_image_file_path(instance, filename):
@@ -118,6 +126,15 @@ class ProductType(models.Model):
         return self.title
 
 
+class ProductManager(models.Manager):
+
+    def active(self):
+        return self.filter(published=True)
+
+    def in_stock(self):
+        return self.active().filter(stock__gte=1)
+
+
 class Product(models.Model):
     MANUAL = "MANUAL"
     AUTOMATIC = "AUTOMATIC"
@@ -129,7 +146,7 @@ class Product(models.Model):
     title = models.CharField(_("title"), max_length=35)
     slug = models.SlugField(max_length=40, blank=False)
     body = models.TextField(_('body'))
-    price = models.DecimalField(decimal_places=2, max_digits=8)
+    price = models.DecimalField(decimal_places=2, max_digits=20)
     taxable = models.BooleanField(default=True)
     tags = TaggableManager()
     uuid = models.UUIDField(default=uuid.uuid4, editable=False)
@@ -165,6 +182,9 @@ class Product(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = models.Manager()
+    broswer = ProductManager()
 
     class Meta:
         unique_together = ('slug', 'store',)
@@ -432,3 +452,326 @@ class Condition(models.Model):
             dict(self.FILTER_CHOICES)[self.filter_type],
             self.field_val
         )
+
+
+class Shipping(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE
+    )
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.CASCADE
+    )
+    company = models.CharField(_("Company"), max_length=32, blank=True)
+    address = models.CharField(_("Address"), max_length=64, blank=False)
+    suite = models.CharField(
+        _("Appartment, suite, etc"),
+        max_length=64,
+        blank=True
+    )
+    postal_code = models.CharField(
+        _("Postal Code"),
+        max_length=10,
+        blank=False
+    )
+    city = models.ForeignKey(
+        to='cities_light.City',
+        blank=False,
+        related_name='city',
+        on_delete=models.CASCADE
+    )
+    state = models.ForeignKey(
+        to='cities_light.Region',
+        blank=False,
+        related_name='state',
+        on_delete=models.CASCADE
+    )
+    country = models.ForeignKey(
+        to='cities_light.Country',
+        blank=False,
+        related_name='country',
+        on_delete=models.CASCADE
+    )
+    telephone = PhoneNumberField(_("Phone Number"), blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return '{}: {} {}'.format(
+            self.user.name,
+            self.address,
+            self.city
+        )
+
+    class Meta:
+        ordering = ['-updated_at', ]
+
+
+# GuestShipping(Shipping)
+# user blank but use Cart.uuid as ref
+# guest email
+# foreignkey to order
+
+
+class Order(models.Model):
+    PENDING = 'PENDING'
+    PROCESSING = 'PROCESSING'
+    PACKAGED = 'PACKAGED'
+    SHIPPED = 'SHIPPED'
+    RECEIVED = 'RECEIVED'
+    CLOSED = 'CLOSED'
+
+    STATUS_CHOICES = (
+        (PENDING, _('Pending')),
+        (PROCESSING, _('Processing Payment')),
+        (PACKAGED, _('Ready to be shipped')),
+        (SHIPPED, _('In Mail')),
+        (RECEIVED, _('Shipment Received')),
+        (CLOSED, _('Closed')),
+    )
+
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.CASCADE
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE
+    )
+    status = models.CharField(
+        _('status'),
+        choices=STATUS_CHOICES,
+        db_index=True,
+        max_length=25,
+        default=PROCESSING
+    )
+    currency = models.CharField(
+        _("Currency"),
+        max_length=3,
+        blank=False,
+        default="CAD"
+    )
+    amount = models.DecimalField(
+        default=0.00,
+        decimal_places=2,
+        max_digits=20
+    )
+    discount_amount = models.DecimalField(
+        default=0.00,
+        decimal_places=2,
+        max_digits=20
+    )
+    final_amount = models.DecimalField(
+        default=0.00,
+        decimal_places=2,
+        max_digits=20
+    )
+    is_paid = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    finished_at = models.DateTimeField(_("Finalized"), null=True)
+
+    objects = models.Manager()
+    # browser = OrderManager()
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.store}_{self.user.name}: {self.amount}/{self.currency}'
+
+    def save(self, *args, **kwargs):
+        cents = Decimal('0.01')
+        order_items = self.order_items.all()
+        self.amount = order_items.aggregate(
+            Sum('total_price')
+        )['total_price__sum'] if order_items.exists() else 0.00
+        self.final_amount = Decimal(self.amount)-Decimal(self.discount_amount)
+        self.final_amount = Decimal(self.final_amount).quantize(
+            cents,
+            ROUND_HALF_UP
+        )
+        super(Order, self).save(*args, **kwargs)
+
+
+class OrderStatusHistory(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE
+    )
+    order = models.ForeignKey(Order, on_delete=models.CASCADE)
+    status = models.CharField(
+        _('status'),
+        max_length=25,
+        choices=Order.STATUS_CHOICES,
+        default=Order.PROCESSING
+    )
+    customer_notified = models.BooleanField(default=False)
+    notes = models.TextField(_('description'), blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class OrderItem(models.Model):
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name='order_items'
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE
+    )
+    quantity = models.IntegerField(default=1)
+    price = models.DecimalField(decimal_places=2, max_digits=20, default=0.00)
+    discount_price = models.DecimalField(
+        decimal_places=2,
+        max_digits=20,
+        default=0.00
+    )
+    final_price = models.DecimalField(
+        decimal_places=2,
+        max_digits=20,
+        default=0.00
+    )
+    total_price = models.DecimalField(
+        decimal_places=2,
+        max_digits=20,
+        default=0.00
+    )
+
+    class Meta:
+        unique_together = ('order', 'product')
+
+    def __str__(self):
+        return f'{self.order.id}: {self.total_price}'
+
+    def save(self,  *args, **kwargs):
+        cents = Decimal('0.01')
+        self.final_price = \
+            self.discount_price if self.discount_price > 0 else self.price
+        self.total_price = Decimal(self.quantity) * Decimal(self.final_price)
+        self.total_price = Decimal(self.total_price).quantize(
+            cents,
+            ROUND_HALF_UP
+        )
+        super(OrderItem, self).save(*args, **kwargs)
+        self.order.save()
+
+
+class Cart(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    store = models.ForeignKey(
+        Store,
+        on_delete=models.CASCADE
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True
+    )
+    currency = models.CharField(
+        _("Currency"),
+        max_length=3,
+        blank=False,
+        default="CAD"
+    )
+    amount = models.DecimalField(
+        default=0.00,
+        decimal_places=2,
+        max_digits=20
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    invalid_at = models.DateTimeField(_("Invalid"), default=return_date_time())
+
+    def __str__(self):
+        return f'{self.id}: {self.amount}/{self.currency}'
+
+    def save(self, *args, **kwargs):
+        cents = Decimal('0.01')
+        cart_items = self.cart_items.all()
+        self.amount = cart_items.aggregate(
+            Sum('total_price')
+        )['total_price__sum'] if cart_items.exists() else 0.00
+        self.amount = Decimal(self.amount).quantize(
+            cents,
+            ROUND_HALF_UP
+        )
+        super(Cart, self).save(*args, **kwargs)
+
+    def add(self, product, quantity=1, note=""):
+        """Add or increment product to cart"""
+        item, created = self.cart_items.get_or_create(
+            product=product,
+            defaults={'quantity': quantity, 'note': note}
+        )
+        if not created:
+            item.quantity += quantity
+            item.save()
+
+    def remove(self, product):
+        self.cart_items.filter(
+            product=product
+        ).delete()
+
+
+class CartItem(models.Model):
+    cart = models.ForeignKey(
+        Cart,
+        on_delete=models.CASCADE,
+        related_name='cart_items'
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE
+    )
+    note = models.TextField(_('Note'))
+    quantity = models.IntegerField(default=1)
+    price = models.DecimalField(
+        decimal_places=2,
+        max_digits=20,
+        default=0.00
+    )
+    discount_price = models.DecimalField(
+        decimal_places=2,
+        max_digits=20,
+        default=0.00
+    )
+    final_price = models.DecimalField(
+        decimal_places=2,
+        max_digits=20,
+        default=0.00
+    )
+    total_price = models.DecimalField(
+        decimal_places=2,
+        max_digits=20,
+        default=0.00
+    )
+
+    def __str__(self):
+        return f'{self.cart_id} - {self.product.title}: {self.price}'
+
+    class Meta:
+        unique_together = ('cart', 'product')
+
+    def save(self,  *args, **kwargs):
+        cents = Decimal('0.01')
+        if not self.product.price:
+            p = Product.objects.get(id=self.product.id)
+            self.price = p.price
+        else:
+            self.price = self.product.price
+
+        self.final_price = \
+            self.discount_price if self.discount_price > 0 else self.price
+        self.total_price = Decimal(self.quantity) * Decimal(self.final_price)
+        self.total_price = Decimal(self.total_price).quantize(
+            cents,
+            ROUND_HALF_UP
+        )
+        super(CartItem, self).save(*args, **kwargs)
+        self.cart.save()

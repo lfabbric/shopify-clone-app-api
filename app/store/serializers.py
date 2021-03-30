@@ -55,6 +55,16 @@ class ProductSerializer(serializers.ModelSerializer):
         read_only_fields = ('id',)
 
 
+class SimpleProductSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Product
+        fields = (
+            'id', 'title', 'taxable', 'price', 'length'
+        )
+        read_only_fields = ('id',)
+
+
 class CollectionSerializer(serializers.ModelSerializer):
 
     class Meta:
@@ -65,6 +75,12 @@ class CollectionSerializer(serializers.ModelSerializer):
 
 class ProductImageSerializer(serializers.ModelSerializer):
     """Serializer for uploading product images"""
+    def create(self, validated_data):
+        product = Product.objects.get(
+            pk=self.context["view"].kwargs["product_pk"]
+        )
+        validated_data["product"] = product
+        return super(ProductImageSerializer, self).create(validated_data)
 
     class Meta:
         model = ProductImage
@@ -72,11 +88,17 @@ class ProductImageSerializer(serializers.ModelSerializer):
             'id', 'title', 'product', 'image',
             'is_primary', 'created_at'
         )
-        read_only_fields = ('id', 'created_at')
+        read_only_fields = ('id', 'created_at', 'product')
 
 
 class ProductAttachmentSerializer(serializers.ModelSerializer):
     """Serializer for uploading product images"""
+    def create(self, validated_data):
+        product = Product.objects.get(
+            pk=self.context["view"].kwargs["product_pk"]
+        )
+        validated_data["product"] = product
+        return super(ProductAttachmentSerializer, self).create(validated_data)
 
     class Meta:
         model = ProductAttachment
@@ -84,4 +106,4 @@ class ProductAttachmentSerializer(serializers.ModelSerializer):
             'id', 'title', 'product', 'file',
             'is_primary', 'created_at'
         )
-        read_only_fields = ('id', 'created_at')
+        read_only_fields = ('id', 'created_at', 'product')

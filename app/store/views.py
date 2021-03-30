@@ -59,7 +59,7 @@ class PublicStoreReadOnlyViewSet(viewsets.GenericViewSet,
     def get_queryset(self):
         """Return objects for the base store"""
         queryset = self.queryset
-        store_slug = self.kwargs['slug']
+        store_slug = self.kwargs['store']
 
         return queryset.filter(store__slug=store_slug)
 
@@ -71,7 +71,7 @@ class BaseStoreModelViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Return objects for the base store"""
         queryset = self.queryset
-        store_slug = self.kwargs['slug']
+        store_slug = self.kwargs['store']
 
         return queryset.filter(store__slug=store_slug)
 
@@ -106,11 +106,10 @@ class CollectionViewSet(PublicStoreReadOnlyViewSet):
     serializer_class = serializers.CollectionSerializer
     queryset = Collection.objects.all()
 
-    @action(methods=['GET'], detail=False, url_path='collection-product-list')
+    @action(methods=['GET'], detail=True, url_path='collection-product-list')
     def product_list(self, request, store, pk):
         collection = Collection.objects.get(pk=pk, store__slug=store)
         products = collection.get_products()
-
         serializer = serializers.ProductSerializer(products, many=True)
 
         return Response(
@@ -127,10 +126,10 @@ class ProductImageViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Return objects for the base store"""
-        queryset = self.queryset
-        store_slug = self.kwargs['slug']
-
-        return queryset.filter(product__store__slug=store_slug)
+        return self.queryset.filter(
+            product__store__slug=self.kwargs['store'],
+            product__id=self.kwargs['product_pk']
+        )
 
 
 class ProductAttachmentViewSet(viewsets.ModelViewSet):
@@ -141,7 +140,7 @@ class ProductAttachmentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Return objects for the base store"""
-        queryset = self.queryset
-        store_slug = self.kwargs['slug']
-
-        return queryset.filter(product__store__slug=store_slug)
+        return self.queryset.filter(
+            product__store__slug=self.kwargs['store'],
+            product__id=self.kwargs['product_pk']
+        )

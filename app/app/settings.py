@@ -41,9 +41,12 @@ INSTALLED_APPS = [
     'taggit',
     'rest_framework',
     'rest_framework.authtoken',
+    'cities_light',
+    'phonenumber_field',
     'core',
     'user',
     'store.apps.StoreConfig',
+    'commerce.apps.CommerceConfig',
 ]
 
 MIDDLEWARE = [
@@ -134,4 +137,12 @@ STATIC_ROOT = '/vol/web/static'
 
 AUTH_USER_MODEL = 'core.User'
 
-# TAGGIT_CASE_INSENSITIVE = True
+TAGGIT_CASE_INSENSITIVE = True
+
+CITIES_LIGHT_TRANSLATION_LANGUAGES = ['fr', 'en']
+CITIES_LIGHT_INCLUDE_COUNTRIES = ['CA', 'US']
+CITIES_LIGHT_INCLUDE_CITY_TYPES = ['PPL', 'PPLA', 'PPLA2', 'PPLA3', 'PPLA4', 'PPLC', 'PPLF', 'PPLG', 'PPLL', 'PPLR', 'PPLS', 'STLMT',]
+
+REST_FRAMEWORK = {
+    'TEST_REQUEST_DEFAULT_FORMAT': 'json',
+}

@@ -15,14 +15,14 @@ from core.models import Store, Product, ProductType, ProductImage, \
 from store import serializers
 
 
-def image_upload_url(store):
+def image_upload_url(store, product_pk):
     """return url for product images"""
-    return reverse('store:productimage-list', args=[store])
+    return reverse('store:product-images-list', args=[store, product_pk])
 
 
-def attachment_upload_url(store):
+def attachment_upload_url(store, product_pk):
     """return url for product images"""
-    return reverse('store:productattachment-list', args=[store])
+    return reverse('store:product-attachments-list', args=[store, product_pk])
 
 
 def product_url(slug):
@@ -144,21 +144,70 @@ class productImageUploadTests(TestCase):
         self.client.force_authenticate(self.user)
         self.store = sample_store(user=self.user)
         self.product = sample_product(user=self.user, store=self.store)
+        self.product2 = sample_product(
+            user=self.user,
+            store=self.store,
+            title='Product A'
+        )
 
     def tearDown(self):
         """Clean test files added"""
         self.product.get_images().delete()
 
-    def test_upload_image_to_store(self):
-        """Test upload an image"""
-        url = image_upload_url(self.store.slug)
+    def test_get_images_for_product(self):
+        url = image_upload_url(self.store.slug, self.product.id)
+        url2 = image_upload_url(self.store.slug, self.product2.id)
         with tempfile.NamedTemporaryFile(suffix='.jpg') as ntf:
             img = Image.new('RGB', (10, 10))
             img.save(ntf, format='JPEG')
             ntf.seek(0)
             payload = {
                 'title': 'Main Product Image',
-                'product': self.product.id,
+                'is_primary': True,
+                'image': ntf
+            }
+            res = self.client.post(url, payload, format='multipart')
+
+        with tempfile.NamedTemporaryFile(suffix='.jpg') as ntf:
+            img = Image.new('RGB', (10, 10))
+            img.save(ntf, format='JPEG')
+            ntf.seek(0)
+            payload = {
+                'title': 'Main Product Image',
+                'is_primary': True,
+                'image': ntf
+            }
+            res = self.client.post(url2, payload, format='multipart')
+
+        with tempfile.NamedTemporaryFile(suffix='.jpg') as ntf:
+            img = Image.new('RGB', (10, 10))
+            img.save(ntf, format='JPEG')
+            ntf.seek(0)
+            payload = {
+                'title': 'Main Product Image 2',
+                'is_primary': True,
+                'image': ntf
+            }
+            res = self.client.post(url, payload, format='multipart')
+
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res.data), 2)
+
+    def test_get_images_for_store(self):
+        url = image_upload_url(self.store.slug, self.product.id)
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    def test_upload_image_to_store(self):
+        """Test upload an image"""
+        url = image_upload_url(self.store.slug, self.product.id)
+        with tempfile.NamedTemporaryFile(suffix='.jpg') as ntf:
+            img = Image.new('RGB', (10, 10))
+            img.save(ntf, format='JPEG')
+            ntf.seek(0)
+            payload = {
+                'title': 'Main Product Image',
                 'is_primary': True,
                 'image': ntf
             }
@@ -179,7 +228,6 @@ class productImageUploadTests(TestCase):
             ntf.seek(0)
             payload = {
                 'title': 'Main Product Image 2',
-                'product': self.product.id,
                 'is_primary': True,
                 'image': ntf
             }
@@ -213,13 +261,12 @@ class productAttachmentUploadTests(TestCase):
         self.product.get_attachments().delete()
 
     def test_upload_attachment_to_store(self):
-        url = attachment_upload_url(self.store.slug)
+        url = attachment_upload_url(self.store.slug, self.product.id)
         with tempfile.NamedTemporaryFile(suffix='.txt') as ntf:
             ntf.write(b'Id,Title')
             ntf.seek(0)
             payload = {
                 'title': 'Main Product Attachment',
-                'product': self.product.id,
                 'is_primary': False,
                 'file': ntf
             }
